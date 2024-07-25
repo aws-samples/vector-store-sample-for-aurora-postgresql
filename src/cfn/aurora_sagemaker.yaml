@@ -1,0 +1,334 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: 
+    This template deploys a VPC, Aurora Postgresql db cluster, and a Amazon SageMaker Notebook Instance
+Parameters:
+  VpcName:
+      Default: AuroraPostgreSQLVectorStore
+      Type: String
+
+  VpcCIDR:
+      Default: 10.215.0.0/16
+      Type: String
+
+  Subnet1CIDR:
+    Default: 10.215.10.0/24
+    Type: String
+
+  Subnet2CIDR:
+      Default: 10.215.20.0/24
+      Type: String
+
+  Subnet3CIDR:
+      Default: 10.215.30.0/24
+      Type: String
+
+  Subnet4CIDR:
+      Default: 10.215.40.0/24
+      Type: String
+  
+  InstanceType:
+      Default: ml.t2.large
+      Type: String
+
+Resources:
+# This creates a VPC ----------------------------------------------------------
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsHostnames: 'true'
+      EnableDnsSupport: 'true'
+      Tags:
+        - Key: Name
+          Value: !Ref VpcName
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Ref VpcName
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs ]
+      MapPublicIpOnLaunch: true
+      CidrBlock: !Ref Subnet1CIDR
+      Tags:
+        - Key: Name
+          Value: !Sub ${VpcName} (Public)
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 1, !GetAZs ]
+      MapPublicIpOnLaunch: true
+      CidrBlock: !Ref Subnet2CIDR
+      Tags:
+        - Key: Name
+          Value: !Sub ${VpcName} (Public)
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 0, !GetAZs ]
+      MapPublicIpOnLaunch: false
+      CidrBlock: !Ref Subnet3CIDR
+      Tags:
+        - Key: Name
+          Value: !Sub ${VpcName} (Private)
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [ 1, !GetAZs ]
+      MapPublicIpOnLaunch: false
+      CidrBlock: !Ref Subnet4CIDR
+      Tags:
+        - Key: Name
+          Value: !Sub ${VpcName} (Private)
+
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Ref VpcName
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  Subnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  Subnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTable
+      SubnetId: !Ref PublicSubnet2
+
+  Subnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTable
+      SubnetId: !Ref PrivateSubnet1
+
+  Subnet4RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref RouteTable
+      SubnetId: !Ref PrivateSubnet2
+
+
+# END VPC ---------------------------------------------------------------------
+
+# This creates a Sagemaker notebook instance ----------------------------------
+  NotebookInstance:
+    Type: AWS::SageMaker::NotebookInstance
+    Properties:
+      InstanceType: !Ref InstanceType
+      RoleArn: !GetAtt ExecutionRole.Arn
+      SubnetId: !Ref PrivateSubnet1
+      SecurityGroupIds:
+        - !Ref NotebookSecurityGroup
+      VolumeSizeInGB: 20
+
+  NotebookSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Notebook Instance Security Group
+      VpcId: !Ref VPC
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: !Ref VpcCIDR
+      
+
+  ExecutionRole: 
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - 
+            Effect: "Allow"
+            Principal: 
+              Service: 
+                - "sagemaker.amazonaws.com"
+                - "translate.amazonaws.com"
+                - "bedrock.amazonaws.com"
+                - "secretsmanager.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      Path: "/"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/TranslateFullAccess
+        - arn:aws:iam::aws:policy/AmazonSageMakerFullAccess
+        - arn:aws:iam::aws:policy/AmazonBedrockFullAccess
+        - arn:aws:iam::aws:policy/SecretsManagerReadWrite
+      Policies:
+        - 
+          PolicyName: "s3_access"
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement: 
+              - 
+                Effect: "Allow"
+                Action: 
+                  - "s3:PutBucketPolicy"
+                  - "s3:DeleteBucket"
+                Resource: "arn:aws:s3:::sagemaker-*"                
+
+# END NOTEBOOK ----------------------------------------------------------------
+
+# Aurora PostgreSQL -----------------------------------------------------------
+
+  EncryptionKey:
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Type: AWS::KMS::Key
+    Properties:
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: 2012-10-17
+        Id: !Ref AWS::StackName
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS:
+                - !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: "kms:*"
+            Resource: "*"
+      Tags:
+        - Key: Name
+          Value: !Ref AWS::StackName
+
+  EncryptionKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub "alias/${AWS::StackName}"
+      TargetKeyId: !Ref EncryptionKey
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+        DBSubnetGroupDescription: "Subnet group for Aurora PostgreSQL"
+        SubnetIds: [!Ref PrivateSubnet1, !Ref PrivateSubnet2 ]
+
+  
+  SecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Allow PostgreSQL and SageMaker access
+      SecurityGroupEgress:
+      - IpProtocol: "-1"
+        CidrIp: 0.0.0.0/0
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 5432
+        ToPort: 5432
+        CidrIp: !Ref VpcCIDR
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Sub '${AWS::StackName}-AuroraClusterSecurityGroup'
+
+  RDSSecrets:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: "aurorapg-vector-secret"
+      Description: 'This is the secret for your Aurora Postgreql cluster'
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "postgres" }'
+        GenerateStringKey: 'password'
+        PasswordLength: 16
+        ExcludeCharacters: '"@/\'
+
+  AuroraCluster:
+    Type: 'AWS::RDS::DBCluster'
+    Properties:
+      MasterUsername: !Join ['', ['{{resolve:secretsmanager:', !Ref RDSSecrets, ':SecretString:username}}' ]]
+      MasterUserPassword: !Join ['', ['{{resolve:secretsmanager:', !Ref RDSSecrets, ':SecretString:password}}' ]]
+      DBClusterIdentifier: aurora-postgresql-cluster
+      Engine: aurora-postgresql
+      EngineVersion: '15.4'
+      DBClusterParameterGroupName: default.aurora-postgresql15
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      Port: 5432
+      VpcSecurityGroupIds: 
+      - !Ref SecurityGroup
+      KmsKeyId: !Ref EncryptionKey
+      StorageEncrypted: true
+      BackupRetentionPeriod: 1
+      DeletionProtection: false
+      EnableCloudwatchLogsExports:
+        - postgresql
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}"
+
+  RDSDBInstance:
+    Type: 'AWS::RDS::DBInstance'
+    Properties:
+      DBInstanceIdentifier: aurora-postgresql-instance
+      Engine: aurora-postgresql
+      DBClusterIdentifier: !Ref AuroraCluster
+      PubliclyAccessible: 'false'
+      DBInstanceClass: db.t3.medium
+
+  SecretAuroraPostgreSQLAttachment:
+    Type: AWS::SecretsManager::SecretTargetAttachment
+    Properties:
+      SecretId: !Ref RDSSecrets
+      TargetId: !Ref AuroraCluster
+      TargetType: AWS::RDS::DBCluster
+
+# End Aurora PostgreSQL -------------------------------------------------------
+
+Outputs:
+
+  NotebookInstanceURL:
+    Description: SageMaker Notebook Instance URL
+    Value: !Join
+      - ''
+      - - !Sub 'https://console.aws.amazon.com/sagemaker/home?region=${AWS::Region}#/notebook-instances/openNotebook/'
+        - !GetAtt NotebookInstance.NotebookInstanceName
+        - '?view=classic'
+
+  DBEndpoint:
+    Description: 'RDS PostgreSQL Endpoint'
+    Value: !GetAtt 'AuroraCluster.Endpoint.Address'
+    Export:
+      Name:
+        'Fn::Sub': '${AWS::StackName}-DBEndPoint'
+
+  DBSecret:
+    Description: 'Database Secret'
+    Value: !Ref RDSSecrets
+    Export:
+      Name:
+        'Fn::Sub': '${AWS::StackName}-DBSecrets'
