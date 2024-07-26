@@ -1,6 +1,6 @@
 # Aurora PostgreSQL Vector Store Sample 
 
-This sample demonstrates how to set up an [Aurora PostgreSQL](https://aws.amazon.com/rds/aurora/) as a vector store for text embeddings generated using models from [Amazon Bedrock](https://aws.amazon.com/bedrock/). And perform similarity searches on the stored vectors with 
+This sample demonstrates how to set up an [Aurora PostgreSQL](https://aws.amazon.com/rds/aurora/) as a vector store for text embeddings generated using models from [Amazon Bedrock](https://aws.amazon.com/bedrock/) and perform similarity searches on the stored vectors. 
 
 Embeddings are dense vector representations of data, such as text, images, or audio, that capture semantic or contextual information. These embeddings are typically learned by machine learning models during the training process, mapping the input data to a lower-dimensional vector space where similar data points are represented by similar vectors.
 
