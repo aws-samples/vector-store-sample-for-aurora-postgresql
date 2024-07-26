@@ -36,6 +36,6 @@ The workflow for this sample will involve the following steps:
 
 1. From the Outputs tab in your CloudFormation console, click the **NotebookInstanceURL**.
 2. Click on Open **JupyterLab** under **Actions** and clone this repository.
-3. Open aurora-postgresql-vector.ipynb notebook with default kernel and follow the steps in it. 
+3. Open **aurora-postgresql-vector.ipynb** notebook with default kernel and run each cell. 
 
 By following this workflow, you will learn how to use Aurora PostgreSQL as a vector store for text embeddings and perform similarity searches on the stored vectors.
